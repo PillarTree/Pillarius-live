@@ -1,0 +1,66 @@
+#!/bin/sh
+set -e
+
+# Boot into graphical target so LightDM starts
+systemctl set-default graphical.target
+
+# Configure LightDM to use spacer-greeter
+cat > /etc/lightdm/lightdm.conf.d/50-spacer-greeter.conf << 'EOF'
+[Seat:*]
+greeter-session=spacer-greeter
+user-session=pillarium
+autologin-user=user
+autologin-user-timeout=0
+EOF
+
+# Create pillarium desktop session
+cat > /usr/share/xsessions/pillarium.desktop << 'EOF'
+[Desktop Entry]
+Name=Pillarium
+Comment=Lightweight X11 Window Manager
+Exec=pillarium
+Type=Application
+DesktopNames=Pillarium
+EOF
+
+# Create default pillarium config directory structure
+mkdir -p /etc/skel/.pillarium
+
+# Set up default wallpaper (create a simple one)
+mkdir -p /usr/share/backgrounds
+cat > /usr/share/backgrounds/pillarius-default.svg << 'EOF'
+<svg width="1920" height="1080" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="#1e1e2e"/>
+  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="48" fill="#cdd6f4">Pillarius</text>
+</svg>
+EOF
+
+# Configure default pillarium config
+cat > /etc/skel/.pillarium/config.json << 'EOF'
+{
+  "wallpaper": "/usr/share/backgrounds/pillarius-default.svg",
+  "theme": "dark",
+  "compositor": "picom",
+  "bar_position": "bottom",
+  "autostart": []
+}
+EOF
+
+# Ensure live user gets the config
+chown -R user:user /home/user/.pillarium 2>/dev/null || true
+
+# Enable services
+systemctl enable lightdm
+systemctl enable NetworkManager
+systemctl enable bluetooth 2>/dev/null || true
+systemctl enable pipewire 2>/dev/null || true
+systemctl enable pipewire-pulse 2>/dev/null || true
+
+# Configure sudo for live user (no password)
+echo "user ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/user-nopasswd
+chmod 440 /etc/sudoers.d/user-nopasswd
+
+# Set up xdg directories for live user
+mkdir -p /etc/skel/Desktop /etc/skel/Documents /etc/skel/Downloads /etc/skel/Pictures /etc/skel/Videos /etc/skel/Music
+
+echo "Pillarius live configuration complete"

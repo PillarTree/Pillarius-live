@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+# Install local Pillarius packages and resolve dependencies
+cd /opt/pillarius-packages
+for deb in *.deb; do
+    dpkg -i "${deb}" || true
+done
+apt-get install -f -y
+
+echo "Local Pillarius packages installed"
