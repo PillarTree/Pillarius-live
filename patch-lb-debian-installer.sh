@@ -57,30 +57,39 @@ else
 	# Merge the complementary cdrom and netboot initrds: the cdrom image
 	# ships without NIC drivers and the netboot image without storage or
 	# CD-ROM drivers; the combined initrd works on any hardware.
-	# Read the sources from the download cache (files in DESTDIR are hard
-	# links to the cache, so never trust them) and install the result
-	# with a plain copy so the shared cache inode is not clobbered.
+	# Merge at the filesystem level (extract both cpio streams into one
+	# tree, re-pack as a single archive). A naive concatenation of the
+	# gzip streams leaves a TRAILER!!! member in the middle, and cpio
+	# stops at the first trailer -- so the later initrd repack for
+	# config/includes.binary_debian-installer would silently drop the
+	# netboot stream. Read the sources from the download cache (files in
+	# DESTDIR are hard links to the cache, never trust them) and install
+	# the result with a plain copy so the cache inode is not clobbered.
 	if [ "${DI_IMAGE_TYPE}" = "cdrom" ] && [ "${LB_ARCHITECTURES}" = "amd64" ]
 	then
 		Download_file /tmp/initrd.cdrom.gz ${URL}/cdrom/initrd.gz
 		Download_file /tmp/initrd-gtk.cdrom.gz ${URL}/cdrom/gtk/initrd.gz
 		_LB_NETBOOT_INITRD="${_LB_CACHE_DIR}/$(echo "${URL}/${DI_REMOTE_BASE}/initrd.gz" | sed 's|/|_|g')"
 		_LB_NETBOOT_INITRD_GI="${_LB_CACHE_DIR}/$(echo "${URL}/${DI_REMOTE_BASE_GTK}/initrd.gz" | sed 's|/|_|g')"
-		Echo_message "Merging installer initrds (cdrom + netboot)..."
-		zcat /tmp/initrd.cdrom.gz > /tmp/initrd.merged
-		zcat "${_LB_NETBOOT_INITRD}" >> /tmp/initrd.merged
-		gzip -9 -c /tmp/initrd.merged > /tmp/initrd.merged.gz
+		Echo_message "Merging installer initrds (cdrom + netboot) at filesystem level..."
+		rm -rf /tmp/initrd-merge
+		mkdir -p /tmp/initrd-merge
+		zcat /tmp/initrd.cdrom.gz | (cd /tmp/initrd-merge && cpio -idm --no-absolute-filenames)
+		zcat "${_LB_NETBOOT_INITRD}" | (cd /tmp/initrd-merge && cpio -idmu --no-absolute-filenames)
+		(cd /tmp/initrd-merge && find -print0 | cpio -H newc -o0) | gzip -9 > /tmp/initrd.merged.gz
 		install -m 644 /tmp/initrd.merged.gz "${DESTDIR}/${INITRD_DI}"
-		Echo_message "Merged initrd.gz: $(stat -c%s /tmp/initrd.merged) bytes uncompressed -> $(stat -c%s /tmp/initrd.merged.gz) bytes compressed"
-		rm -f /tmp/initrd.merged /tmp/initrd.merged.gz
+		Echo_message "Merged initrd.gz: $(stat -c%s /tmp/initrd.merged.gz) bytes"
+		rm -rf /tmp/initrd-merge /tmp/initrd.merged.gz
 		if [ ${DOWNLOAD_GTK_INSTALLER} -eq 1 ]
 		then
-			zcat /tmp/initrd-gtk.cdrom.gz > /tmp/initrd-gtk.merged
-			zcat "${_LB_NETBOOT_INITRD_GI}" >> /tmp/initrd-gtk.merged
-			gzip -9 -c /tmp/initrd-gtk.merged > /tmp/initrd-gtk.merged.gz
+			rm -rf /tmp/initrd-merge-gtk
+			mkdir -p /tmp/initrd-merge-gtk
+			zcat /tmp/initrd-gtk.cdrom.gz | (cd /tmp/initrd-merge-gtk && cpio -idm --no-absolute-filenames)
+			zcat "${_LB_NETBOOT_INITRD_GI}" | (cd /tmp/initrd-merge-gtk && cpio -idmu --no-absolute-filenames)
+			(cd /tmp/initrd-merge-gtk && find -print0 | cpio -H newc -o0) | gzip -9 > /tmp/initrd-gtk.merged.gz
 			install -m 644 /tmp/initrd-gtk.merged.gz "${DESTDIR}/${INITRD_GI}"
-			Echo_message "Merged gtk/initrd.gz: $(stat -c%s /tmp/initrd-gtk.merged) bytes uncompressed -> $(stat -c%s /tmp/initrd-gtk.merged.gz) bytes compressed"
-			rm -f /tmp/initrd-gtk.merged /tmp/initrd-gtk.merged.gz
+			Echo_message "Merged gtk/initrd.gz: $(stat -c%s /tmp/initrd-gtk.merged.gz) bytes"
+			rm -rf /tmp/initrd-merge-gtk /tmp/initrd-gtk.merged.gz
 		fi
 		rm -f /tmp/initrd.cdrom.gz /tmp/initrd-gtk.cdrom.gz
 	fi
