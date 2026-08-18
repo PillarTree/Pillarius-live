@@ -35,6 +35,7 @@ network-manager
 network-manager-gnome
 wireless-tools
 wpasupplicant
+isc-dhcp-client
 
 # Audio
 pipewire
