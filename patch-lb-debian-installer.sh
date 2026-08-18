@@ -57,21 +57,32 @@ else
 	# Merge the complementary cdrom and netboot initrds: the cdrom image
 	# ships without NIC drivers and the netboot image without storage or
 	# CD-ROM drivers; the combined initrd works on any hardware.
+	# Read the sources from the download cache (files in DESTDIR are hard
+	# links to the cache, so never trust them) and install the result
+	# with a plain copy so the shared cache inode is not clobbered.
 	if [ "${DI_IMAGE_TYPE}" = "cdrom" ] && [ "${LB_ARCHITECTURES}" = "amd64" ]
 	then
-		Download_file initrd.cdrom.gz ${URL}/cdrom/initrd.gz
-		zcat initrd.cdrom.gz > initrd.merged
-		zcat "${DESTDIR}/${INITRD_DI}" >> initrd.merged
-		gzip -9 -c initrd.merged > "${DESTDIR}/${INITRD_DI}"
-		rm -f initrd.cdrom.gz initrd.merged
+		Download_file /tmp/initrd.cdrom.gz ${URL}/cdrom/initrd.gz
+		Download_file /tmp/initrd-gtk.cdrom.gz ${URL}/cdrom/gtk/initrd.gz
+		_LB_NETBOOT_INITRD="${_LB_CACHE_DIR}/$(echo "${URL}/${DI_REMOTE_BASE}/initrd.gz" | sed 's|/|_|g')"
+		_LB_NETBOOT_INITRD_GI="${_LB_CACHE_DIR}/$(echo "${URL}/${DI_REMOTE_BASE_GTK}/initrd.gz" | sed 's|/|_|g')"
+		Echo_message "Merging installer initrds (cdrom + netboot)..."
+		zcat /tmp/initrd.cdrom.gz > /tmp/initrd.merged
+		zcat "${_LB_NETBOOT_INITRD}" >> /tmp/initrd.merged
+		gzip -9 -c /tmp/initrd.merged > /tmp/initrd.merged.gz
+		install -m 644 /tmp/initrd.merged.gz "${DESTDIR}/${INITRD_DI}"
+		Echo_message "Merged initrd.gz: $(stat -c%s /tmp/initrd.merged) bytes uncompressed -> $(stat -c%s /tmp/initrd.merged.gz) bytes compressed"
+		rm -f /tmp/initrd.merged /tmp/initrd.merged.gz
 		if [ ${DOWNLOAD_GTK_INSTALLER} -eq 1 ]
 		then
-			Download_file initrd-gtk.cdrom.gz ${URL}/cdrom/gtk/initrd.gz
-			zcat initrd-gtk.cdrom.gz > initrd-gtk.merged
-			zcat "${DESTDIR}/${INITRD_GI}" >> initrd-gtk.merged
-			gzip -9 -c initrd-gtk.merged > "${DESTDIR}/${INITRD_GI}"
-			rm -f initrd-gtk.cdrom.gz initrd-gtk.merged
+			zcat /tmp/initrd-gtk.cdrom.gz > /tmp/initrd-gtk.merged
+			zcat "${_LB_NETBOOT_INITRD_GI}" >> /tmp/initrd-gtk.merged
+			gzip -9 -c /tmp/initrd-gtk.merged > /tmp/initrd-gtk.merged.gz
+			install -m 644 /tmp/initrd-gtk.merged.gz "${DESTDIR}/${INITRD_GI}"
+			Echo_message "Merged gtk/initrd.gz: $(stat -c%s /tmp/initrd-gtk.merged) bytes uncompressed -> $(stat -c%s /tmp/initrd-gtk.merged.gz) bytes compressed"
+			rm -f /tmp/initrd-gtk.merged /tmp/initrd-gtk.merged.gz
 		fi
+		rm -f /tmp/initrd.cdrom.gz /tmp/initrd-gtk.cdrom.gz
 	fi
 EOF
     sudo sed -i "/DI_REMOTE_BASE_GTK}\/initrd.gz/r /tmp/initrd-merge.block" "${SCRIPT}"
