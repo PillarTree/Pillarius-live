@@ -10,10 +10,14 @@ CLEAN="${CLEAN:-normal}"
 
 mkdir -p "${OUTPUT_DIR}"
 
+# Supported architectures
+ARCHS=(amd64 i386)
+
 sync_config() {
     local version=$1
+    local arch=$2
     local src="${PROJECT_DIR}/pillarius-live/${version}"
-    local dst="${BUILD_BASE}/${version}"
+    local dst="${BUILD_BASE}/${version}-${arch}"
 
     mkdir -p "${dst}"
     # Sync config files, but preserve the .build cache between builds.
@@ -23,17 +27,18 @@ sync_config() {
 
 build_version() {
     local version=$1
-    local build_path="${BUILD_BASE}/${version}"
-    local iso_name="pillarius-${version}-${DATE}-amd64.iso"
+    local arch=$2
+    local build_path="${BUILD_BASE}/${version}-${arch}"
+    local iso_name="pillarius-${version}-${DATE}-${arch}.iso"
 
-    echo "==> Syncing ${version} config..."
-    sync_config "${version}"
+    echo "==> Syncing ${version} config (arch=${arch})..."
+    sync_config "${version}" "${arch}"
 
     echo "==> Building ${version} version..."
     cd "${build_path}"
 
     # Regenerate config from auto/config
-    sudo lb config
+    sudo lb config --architectures "${arch}"
 
     # Clean previous build (keeps apt cache unless CLEAN=purge)
     if [ "${CLEAN}" = "purge" ]; then
@@ -47,14 +52,20 @@ build_version() {
     sudo lb build
 
     # Move ISO to output
-    if [ -f live-image-amd64.hybrid.iso ]; then
-        mv live-image-amd64.hybrid.iso "${OUTPUT_DIR}/${iso_name}"
-    elif [ -f binary.hybrid.iso ]; then
-        mv binary.hybrid.iso "${OUTPUT_DIR}/${iso_name}"
-    else
-        echo "ERROR: ISO not found for ${version}"
+    local iso_file=""
+    for possible in "live-image-${arch}.hybrid.iso" "binary.hybrid.iso"; do
+        if [ -f "${build_path}/${possible}" ]; then
+            iso_file="${possible}"
+            break
+        fi
+    done
+
+    if [ -z "${iso_file}" ]; then
+        echo "ERROR: ISO not found for ${version}-${arch}"
         exit 1
     fi
+
+    mv "${build_path}/${iso_file}" "${OUTPUT_DIR}/${iso_name}"
     echo "Built: ${OUTPUT_DIR}/${iso_name}"
 
     # Generate SHA256
@@ -64,9 +75,11 @@ build_version() {
 
 VERSION="${1:-all}"
 case "${VERSION}" in
-    all)  build_version "minimal"; build_version "full" ;;
-    minimal|full) build_version "${VERSION}" ;;
-    *) echo "usage: $0 [minimal|full|all]"; exit 1 ;;
+    all)  build_version "minimal" "amd64"; build_version "full" "amd64"; build_version "minimal" "i386"; build_version "full" "i386" ;;
+    amd64) build_version "minimal" "amd64"; build_version "full" "amd64" ;;
+    i386) build_version "minimal" "i386"; build_version "full" "i386" ;;
+    minimal|full) build_version "${VERSION}" "amd64" ;;
+    *) echo "usage: $0 [minimal|full|all|i386]"; exit 1 ;;
 esac
 
 echo ""
